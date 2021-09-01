@@ -14,6 +14,7 @@
 ### 建立kube-state-metrics
 透過kube-state-metrics將k8s資源使用量取出
 
+kube-state-metrics:https://github.com/kubernetes/kube-state-metrics
 
 clone專案:
 ```shell=
@@ -79,6 +80,8 @@ kubectl apply -f log-filebeat.yaml
 ```
 
 ### 建立eventrouter-filebeat
+
+eventrouter:https://github.com/openshift/eventrouter
 
 此pod中包含eventrouter和filebeat，其中eventrouter負責收集k8s的events，filebeat則負責傳送log至elasticsearch或是logstash (此處是傳往logstash)
 
