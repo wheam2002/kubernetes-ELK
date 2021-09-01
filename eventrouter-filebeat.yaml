@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eventrouter 
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: eventrouter 
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: eventrouter 
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: eventrouter
+subjects:
+- kind: ServiceAccount
+  name: eventrouter
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eventrouter-cm
+  namespace: kube-system
+data:
+  config.json: |- 
+    {
+      "sink": "glog"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: kube-system
+data:
+  filebeat.yml: |-
+    filebeat.inputs:
+    - type: log
+      paths:
+        - "/data/log/eventrouter/*"
+    # output.elasticsearch:
+    #   hosts: ["elasticsearch-logging:9200"]
+    output.logstash:
+      hosts: ["logstash:5044"]
+      enabled: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventrouter
+  namespace: kube-system
+  labels:
+    app: eventrouter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventrouter
+  template:
+    metadata:
+      labels:
+        app: eventrouter
+        tier: control-plane-addons
+    spec:
+      containers:
+        - name: kube-eventrouter
+          image: wheam/eventrouter:0.0.1
+          # command:
+          #   - "/bin/sh"
+          # args:
+          #   - "-c"
+          #   - "/eventrouter -v 3 -log_dir /data/log/eventrouter"
+          volumeMounts:
+          - name: eventrouter-cm
+            mountPath: /etc/eventrouter
+          - name: log-path
+            mountPath: /data/log/eventrouter
+        - name: filebeat
+          image: docker.io/kubeimages/filebeat:7.9.3 
+          args: [
+            "-c", "/etc/filebeat.yml",
+            "-e","-httpprof","0.0.0.0:6060"
+          ]
+          env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: ELASTICSEARCH_HOST
+            value: elasticsearch-logging
+          - name: ELASTICSEARCH_PORT
+            value: "9200"
+          securityContext:
+            runAsUser: 0
+          resources:
+            limits:
+              memory: 1000Mi
+              cpu: 1000m
+            requests:
+              memory: 100Mi
+              cpu: 100m
+          volumeMounts:
+          - name: filebeat-config
+            mountPath: /etc/filebeat.yml
+            readOnly: true
+            subPath: filebeat.yml
+          - name: log-path
+            mountPath: /data/log/eventrouter
+      serviceAccount: eventrouter
+      volumes:
+        - name: eventrouter-cm
+          configMap:
+            name: eventrouter-cm
+        - name: filebeat-config
+          configMap:
+            name: filebeat-config
+        - name: log-path
+          emptyDir: {}
